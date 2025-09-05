@@ -80,7 +80,13 @@ def send_email(monitors):
 def main():
     monitors = get_used_monitors()
     if monitors:
+        print(f"Found {len(monitors)} monitor(s) under {MAX_PRICE} yen")
+        for m in monitors:
+            print(f"- {m['title']} ¥{m['price']} {m['url']}")
         send_email(monitors)
+        print("✅ Email sent!")
+    else:
+        print("No monitors found under threshold.")
 
 if __name__ == "__main__":
     main()
