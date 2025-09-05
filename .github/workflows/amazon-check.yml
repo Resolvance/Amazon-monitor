@@ -10,12 +10,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: "3.11"
+
       - name: Install dependencies
-        run: pip install requests beautifulsoup4
+        run: |
+          pip install beautifulsoup4 playwright
+          playwright install chromium
+
       - name: Run Amazon checker
         env:
           EMAIL_USER: ${{ secrets.EMAIL_USER }}
