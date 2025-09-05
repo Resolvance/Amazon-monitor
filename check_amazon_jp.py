@@ -11,7 +11,14 @@ SEARCH_URL = (
 )
 
 MAX_PRICE = 800000
+def send_email(monitors):
+    user = os.getenv("EMAIL_USER")
+    password = os.getenv("EMAIL_PASS")
+    recipient = os.getenv("EMAIL_TO")
 
+    if not user or not password or not recipient:
+        print("❌ Missing email credentials. Check GitHub Secrets.")
+        return
 def get_used_monitors():
     results = []
     with sync_playwright() as p:
