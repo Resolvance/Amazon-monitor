@@ -5,7 +5,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from playwright.sync_api import sync_playwright
 
-# Amazon Japan search URL for LG, Samsung, MSI Curved OLED monitors, used items only
+# Amazon Japan search URL for LG, Samsung, MSI Curved OLED monitors
 SEARCH_URL = (
     "https://www.amazon.co.jp/s?"
     "k=LG+Samsung+MSI+curved+OLED+monitor&i=electronics&rh=p_n_condition-type%3A2224375051"
@@ -14,62 +14,67 @@ SEARCH_URL = (
 # Maximum price filter (in yen)
 MAX_PRICE = 80000
 
+def get_product_used_price(page, url):
+    """Given a product page URL, return the used price if available, else None."""
+    try:
+        page.goto(url, timeout=60000)
+        page.wait_for_timeout(3000)
+        html = page.content()
+        soup = BeautifulSoup(html, "html.parser")
+
+        # Try to find "Used from" price
+        used_price_el = soup.select_one(
+            "#usedBuySection .a-color-price, #olpOfferListColumn .a-color-price"
+        )
+        if used_price_el:
+            price_text = used_price_el.get_text(strip=True).replace("￥", "").replace(",", "").strip()
+            return int(price_text)
+    except Exception as e:
+        print(f"Error fetching product page {url}: {e}")
+    return None
+
 def get_used_monitors():
     results = []
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
         page.goto(SEARCH_URL, timeout=60000)
-        page.wait_for_timeout(5000)  # wait for JS content to load
+        page.wait_for_timeout(5000)  # wait for JS content
 
         html = page.content()
+        soup = BeautifulSoup(html, "html.parser")
+
+        for item in soup.select("div.s-main-slot div[data-asin]"):
+            title_el = item.select_one("h2 a span")
+            link_el = item.select_one("h2 a")
+
+            if not title_el or not link_el:
+                continue
+
+            title_text = title_el.get_text(strip=True)
+            product_url = "https://www.amazon.co.jp" + link_el["href"]
+
+            # Check brand / curved / OLED before loading page to save time
+            if not any(brand in title_text for brand in ["LG", "Samsung", "MSI"]):
+                continue
+            if "OLED" not in title_text or ("曲面" not in title_text and "Curved" not in title_text):
+                continue
+
+            # Get used price from product page
+            price_val = get_product_used_price(page, product_url)
+            if price_val is None:
+                continue
+
+            print(f"DEBUG: {title_text} | used price: ¥{price_val} | {product_url}")
+
+            if price_val <= MAX_PRICE:
+                results.append({
+                    "title": title_text,
+                    "price": price_val,
+                    "url": product_url
+                })
+
         browser.close()
-
-    soup = BeautifulSoup(html, "html.parser")
-
-    for item in soup.select("div.s-main-slot div[data-asin]"):
-        title_el = item.select_one("h2 a span")
-        link_el = item.select_one("h2 a")
-
-        if not title_el or not link_el:
-            continue
-
-        title_text = title_el.get_text(strip=True)
-
-        # Try normal price first
-        price_el = item.select_one("span.a-price-whole")
-
-        # Fallback for used items: look for "中古品 ￥xx より"
-        if not price_el:
-            price_el = item.select_one("span.a-color-secondary")
-
-        if not price_el:
-            continue
-
-        # Clean price text
-        price_text = price_el.get_text(strip=True).replace("￥", "").replace(",", "").replace("中古品", "").replace("より", "").strip()
-
-        try:
-            price_val = int(price_text)
-        except ValueError:
-            continue
-
-        # Debug logging
-        print(f"DEBUG: {title_text} | raw price: {price_el.get_text(strip=True)} | parsed price: {price_val}")
-
-        # Filter for brand, curved, OLED, and price
-        if (
-            any(brand in title_text for brand in ["LG", "Samsung", "MSI"])
-            and ("曲面" in title_text or "Curved" in title_text)
-            and "OLED" in title_text
-            and price_val <= MAX_PRICE
-        ):
-            results.append({
-                "title": title_text,
-                "price": price_val,
-                "url": "https://www.amazon.co.jp" + link_el["href"]
-            })
-
     return results
 
 def send_email(monitors):
