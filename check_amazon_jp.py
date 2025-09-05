@@ -111,7 +111,7 @@ def main():
             print(f"- {m['title']} ¥{m['price']} {m['url']}")
         send_email(monitors)
     else:
-        print("No monitors found under threshold.")
+        print("poopy")
 
 if __name__ == "__main__":
     main()
