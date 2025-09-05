@@ -10,7 +10,7 @@ SEARCH_URL = (
     "k=LG+Samsung+MSI+curved+OLED+monitor&i=electronics&rh=p_n_condition-type%3A2224375051"
 )
 
-MAX_PRICE = 80000
+MAX_PRICE = 800000
 
 def get_used_monitors():
     results = []
