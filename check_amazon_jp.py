@@ -1,23 +1,29 @@
 import os
 import smtplib
-import requests
 from bs4 import BeautifulSoup
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from playwright.sync_api import sync_playwright
 
-SEARCH_URL = "https://www.amazon.co.jp/s?k=LG+Samsung+MSI+curved+OLED+monitor&i=electronics&rh=p_n_condition-type%3A2224375051"
-
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36",
-    "Accept-Language": "ja-JP,ja;q=0.9,en-US;q=0.8,en;q=0.7"
-}
+SEARCH_URL = (
+    "https://www.amazon.co.jp/s?"
+    "k=LG+Samsung+MSI+curved+OLED+monitor&i=electronics&rh=p_n_condition-type%3A2224375051"
+)
 
 MAX_PRICE = 80000
 
 def get_used_monitors():
-    r = requests.get(SEARCH_URL, headers=HEADERS)
-    soup = BeautifulSoup(r.text, "html.parser")
     results = []
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.goto(SEARCH_URL, timeout=60000)
+        page.wait_for_timeout(5000)  # wait for dynamic content
+
+        html = page.content()
+        browser.close()
+
+    soup = BeautifulSoup(html, "html.parser")
 
     for item in soup.select("div.s-main-slot div[data-asin]"):
         title = item.select_one("h2 a span")
@@ -28,4 +34,53 @@ def get_used_monitors():
             continue
 
         title_text = title.get_text(strip=True)
-        price_text = price.get_text(strip=True).
+        price_text = price.get_text(strip=True).replace(",", "")
+
+        try:
+            price_val = int(price_text)
+        except ValueError:
+            continue
+
+        if (
+            any(brand in title_text for brand in ["LG", "Samsung", "MSI"])
+            and ("曲面" in title_text or "Curved" in title_text)
+            and "OLED" in title_text
+            and price_val <= MAX_PRICE
+        ):
+            results.append(
+                {
+                    "title": title_text,
+                    "price": price_val,
+                    "url": "https://www.amazon.co.jp" + link["href"],
+                }
+            )
+
+    return results
+
+def send_email(monitors):
+    user = os.getenv("EMAIL_USER")
+    password = os.getenv("EMAIL_PASS")
+    recipient = os.getenv("EMAIL_TO")
+
+    subject = f"[Amazon JP Alert] {len(monitors)} Curved OLED Monitors Found!"
+    body = "\n\n".join(
+        [f"{m['title']} - ¥{m['price']}\n{m['url']}" for m in monitors]
+    )
+
+    msg = MIMEMultipart()
+    msg["From"] = user
+    msg["To"] = recipient
+    msg["Subject"] = subject
+    msg.attach(MIMEText(body, "plain"))
+
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+        server.login(user, password)
+        server.send_message(msg)
+
+def main():
+    monitors = get_used_monitors()
+    if monitors:
+        send_email(monitors)
+
+if __name__ == "__main__":
+    main()
